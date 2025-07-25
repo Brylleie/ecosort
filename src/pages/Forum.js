@@ -1,6 +1,7 @@
 /* global __firebase_config, __app_id, __initial_auth_token */
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { 
   initializeApp 
 } from 'firebase/app';
@@ -23,7 +24,6 @@ import {
   arrayUnion, 
   arrayRemove 
 } from 'firebase/firestore';
-
 // Custom Icons (re-using your provided SVG icons)
 const ThumbsUpIcon = ({ className = "w-5 h-5", filled = false }) => (
   <svg className={className} fill={filled ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
@@ -79,7 +79,6 @@ const XIcon = ({ className = "w-5 h-5" }) => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
-
 export default function ReportForum() {
   const [reports, setReports] = useState([]);
   const [commentText, setCommentText] = useState({});
@@ -94,291 +93,242 @@ export default function ReportForum() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const navigate = useNavigate();
+  const navigate = useNavigate();;
 
   // Firebase state variables
-  const [firestoreDb, setFirestoreDb] = useState(null);
-  const [firebaseAuth, setFirebaseAuth] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
+    const [firestoreDb, setFirestoreDb] = useState(null);
+    const [currentUser, setCurrentUser] = useState(null);
+    const [loadingAuth, setLoadingAuth] = useState(true);
 
-  // Initialize Firebase and set up auth listener
-  useEffect(() => {
-    try {
-      const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-      if (!firebaseConfig) {
-        console.error("Firebase config is not defined. Cannot initialize Firebase.");
-        setLoadingAuth(false);
-        return;
-      }
+  const handleReportClick = () => {
+    navigate("/report"); // Navigate to the Report component
+  };
 
-      const appInstance = initializeApp(firebaseConfig);
-      const dbInstance = getFirestore(appInstance);
-      const authInstance = getAuth(appInstance);
-
-      setFirestoreDb(dbInstance);
-      setFirebaseAuth(authInstance);
-
-      const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-        setCurrentUser(user);
-        setLoadingAuth(false);
-
-        if (!user) {
-          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            try {
-              await signInWithCustomToken(authInstance, __initial_auth_token);
-            } catch (error) {
-              console.error("Firebase custom token authentication error:", error);
-            }
-          } else {
-            try {
-              await signInAnonymously(authInstance);
-            } catch (error) {
-              console.error("Firebase anonymous authentication error:", error);
+    // Initialize Firebase and set up auth listener
+    useEffect(() => {
+      try {
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        if (!firebaseConfig) {
+          console.error("Firebase config is not defined. Cannot initialize Firebase.");
+          setLoadingAuth(false);
+          return;
+        }
+  
+        const appInstance = initializeApp(firebaseConfig);
+        const dbInstance = getFirestore(appInstance);
+        const authInstance = getAuth(appInstance);
+  
+        setFirestoreDb(dbInstance);
+  
+        const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+          setCurrentUser(user);
+          setLoadingAuth(false);
+  
+          if (!user) {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              try {
+                await signInWithCustomToken(authInstance, __initial_auth_token);
+              } catch (error) {
+                console.error("Firebase custom token authentication error:", error);
+              }
+            } else {
+              try {
+                await signInAnonymously(authInstance);
+              } catch (error) {
+                console.error("Firebase anonymous authentication error:", error);
+              }
             }
           }
-        }
+        });
+  
+        return () => unsubscribe();
+      } catch (error) {
+        console.error("Error during Firebase initialization:", error);
+        setLoadingAuth(false);
+        setFirestoreDb(null);
+      }
+    }, []);
+  
+    const currentUserId = currentUser?.uid || 'anonymous';
+    const currentUserEmail = currentUser?.email || 'anonymous@example.com';
+  
+    // Fetch reports from Firestore
+    useEffect(() => {
+      if (!firestoreDb || loadingAuth || !currentUser) {
+        return;
+      }
+  
+      setLoading(true);
+      const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+      const reportsCollectionRef = collection(firestoreDb, `artifacts/${appId}/public/data/reports`);
+  
+      const qReports = query(reportsCollectionRef, orderBy('submittedAt', 'desc'));
+      const unsubscribe = onSnapshot(qReports, (snapshot) => {
+        const fetchedReports = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          // Convert Firestore Timestamp to JavaScript Date for consistent handling
+          submittedAt: doc.data().submittedAt?.toDate ? doc.data().submittedAt.toDate() : new Date(),
+          likes: doc.data().likes || [], // Ensure likes array exists
+          comments: doc.data().comments || [] // Ensure comments array exists
+        }));
+        setReports(fetchedReports);
+        setLoading(false);
+      }, (err) => {
+        setError("Failed to fetch reports. Check permissions and network.");
+        console.error("Error fetching reports: ", err);
+        setLoading(false);
       });
-
+  
       return () => unsubscribe();
-    } catch (error) {
-      console.error("Error during Firebase initialization:", error);
-      setLoadingAuth(false);
-      setFirestoreDb(null);
-    }
-  }, []);
-
-  const currentUserId = currentUser?.uid || 'anonymous';
-  const currentUserEmail = currentUser?.email || 'anonymous@example.com';
-
-  // Fetch reports from Firestore
-  useEffect(() => {
-    if (!firestoreDb || loadingAuth || !currentUser) {
-      return;
-    }
-
-    setLoading(true);
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const reportsCollectionRef = collection(firestoreDb, `artifacts/${appId}/public/data/reports`);
-
-    const qReports = query(reportsCollectionRef, orderBy('submittedAt', 'desc'));
-    const unsubscribe = onSnapshot(qReports, (snapshot) => {
-      const fetchedReports = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        // Convert Firestore Timestamp to JavaScript Date for consistent handling
-        submittedAt: doc.data().submittedAt?.toDate ? doc.data().submittedAt.toDate() : new Date(),
-        likes: doc.data().likes || [], // Ensure likes array exists
-        comments: doc.data().comments || [] // Ensure comments array exists
-      }));
-      setReports(fetchedReports);
-      setLoading(false);
-    }, (err) => {
-      setError("Failed to fetch reports. Check permissions and network.");
-      console.error("Error fetching reports: ", err);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [firestoreDb, loadingAuth, currentUser]); // Re-run when db, auth status, or user changes
-
-  const handleLike = async (reportId) => {
-    if (!currentUser || !firestoreDb) {
-      alert("Please log in to like a report.");
-      return;
-    }
-    const reportRef = doc(firestoreDb, `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'}/public/data/reports`, reportId);
-    const report = reports.find(r => r.id === reportId);
-
-    if (report) {
-      const isLiked = report.likes.includes(currentUser.uid);
+    }, [firestoreDb, loadingAuth, currentUser]); // Re-run when db, auth status, or user changes
+  
+    const handleLike = async (reportId) => {
+      if (!currentUser || !firestoreDb) {
+        alert("Please log in to like a report.");
+        return;
+      }
+      const reportRef = doc(firestoreDb, `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'}/public/data/reports`, reportId);
+      const report = reports.find(r => r.id === reportId);
+  
+      if (report) {
+        const isLiked = report.likes.includes(currentUser.uid);
+        try {
+          await updateDoc(reportRef, {
+            likes: isLiked ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
+          });
+        } catch (e) {
+          console.error("Error updating like: ", e);
+          alert("Failed to update like. Please try again.");
+        }
+      }
+    };
+  
+    const handleCommentSubmit = async (reportId) => {
+      if (!currentUser || !firestoreDb) {
+        alert("Please log in to comment.");
+        return;
+      }
+      const text = commentText[reportId]?.trim();
+      if (!text) return;
+  
+      const comment = {
+        text,
+        user: currentUserEmail,
+        timestamp: serverTimestamp(), // Use serverTimestamp for new comments
+      };
+  
+      const reportRef = doc(firestoreDb, `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'}/public/data/reports`, reportId);
+  
       try {
         await updateDoc(reportRef, {
-          likes: isLiked ? arrayRemove(currentUser.uid) : arrayUnion(currentUser.uid)
+          comments: arrayUnion(comment)
         });
+        setCommentText((prev) => ({ ...prev, [reportId]: "" }));
       } catch (e) {
-        console.error("Error updating like: ", e);
-        alert("Failed to update like. Please try again.");
+        console.error("Error adding comment: ", e);
+        alert("Failed to add comment. Please try again.");
       }
-    }
-  };
-
-  const handleCommentSubmit = async (reportId) => {
-    if (!currentUser || !firestoreDb) {
-      alert("Please log in to comment.");
-      return;
-    }
-    const text = commentText[reportId]?.trim();
-    if (!text) return;
-
-    const comment = {
-      text,
-      user: currentUserEmail,
-      timestamp: serverTimestamp(), // Use serverTimestamp for new comments
     };
-
-    const reportRef = doc(firestoreDb, `artifacts/${typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'}/public/data/reports`, reportId);
-
-    try {
-      await updateDoc(reportRef, {
-        comments: arrayUnion(comment)
-      });
-      setCommentText((prev) => ({ ...prev, [reportId]: "" }));
-    } catch (e) {
-      console.error("Error adding comment: ", e);
-      alert("Failed to add comment. Please try again.");
-    }
-  };
-
-  const toggleComments = (reportId) => {
-    setExpandedComments(prev => ({
-      ...prev,
-      [reportId]: !prev[reportId]
-    }));
-  };
-
-  const getSeverityColor = (severity) => {
-    switch (severity) {
-      case 'high': return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const formatTimeAgo = (timestamp) => {
-    if (!timestamp) return 'N/A';
-    // Ensure timestamp is a Date object
-    const date = timestamp instanceof Date ? timestamp : new Date(timestamp.seconds * 1000);
-    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-
-    if (seconds < 60) return 'Just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
-  };
-
-  const handleReportSubmit = async (e) => {
-    e.preventDefault();
-    if (!currentUser || !firestoreDb) {
-      alert("Please log in to submit a report.");
-      return;
-    }
-    if (!newReportLocation.trim() || !newReportDescription.trim()) {
-      alert("Please fill in all required fields.");
-      return;
-    }
-
-    setLoading(true);
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-    try {
-      await addDoc(collection(firestoreDb, `artifacts/${appId}/public/data/reports`), {
-        location: newReportLocation,
-        description: newReportDescription,
-        severity: newReportSeverity,
-        category: newReportCategory,
-        mediaUrl: newReportMediaUrl,
-        submittedAt: serverTimestamp(),
-        likes: [],
-        comments: [],
-        authorId: currentUserId,
-        authorEmail: currentUserEmail,
-      });
-      setShowReportModal(false);
-      setNewReportLocation('');
-      setNewReportDescription('');
-      setNewReportSeverity('medium');
-      setNewReportCategory('illegal_dumping');
-      setNewReportMediaUrl('');
-      setLoading(false);
-    } catch (error) {
-      console.error("Error submitting report:", error);
-      setError("Failed to submit report. Please try again.");
-      setLoading(false);
-    }
-  };
-
-  const filteredReports = reports.filter(report => {
-    if (filterType === 'all') return true;
-    return report.category === filterType;
-  });
-
-  if (loadingAuth || (loading && !error && firestoreDb)) { 
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
-        <p className="ml-4 text-lg text-gray-700">Loading application...</p>
-      </div>
-    );
-  }
-
-  if (error && !loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-red-50">
-        <div className="bg-white rounded-lg p-8 shadow-lg text-center">
-          <AlertTriangleIcon className="text-red-500 text-6xl mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-red-700 mb-2">Error Loading Data</h2>
-          <p className="text-gray-700">{error}</p>
-          <p className="text-sm text-gray-500 mt-4">Please check your Firebase Security Rules and network connection.</p>
+  
+    const toggleComments = (reportId) => {
+      setExpandedComments(prev => ({
+        ...prev,
+        [reportId]: !prev[reportId]
+      }));
+    };
+  
+    const getSeverityColor = (severity) => {
+      switch (severity) {
+        case 'high': return 'bg-red-100 text-red-800 border-red-200';
+        case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        case 'low': return 'bg-green-100 text-green-800 border-green-200';
+        default: return 'bg-gray-100 text-gray-800 border-gray-200';
+      }
+    };
+  
+    const formatTimeAgo = (timestamp) => {
+      if (!timestamp) return 'N/A';
+      // Ensure timestamp is a Date object
+      const date = timestamp instanceof Date ? timestamp : new Date(timestamp.seconds * 1000);
+      const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  
+      if (seconds < 60) return 'Just now';
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+      if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+      return `${Math.floor(seconds / 86400)}d ago`;
+    };
+  
+    const handleReportSubmit = async (e) => {
+      e.preventDefault();
+      if (!currentUser || !firestoreDb) {
+        alert("Please log in to submit a report.");
+        return;
+      }
+      if (!newReportLocation.trim() || !newReportDescription.trim()) {
+        alert("Please fill in all required fields.");
+        return;
+      }
+  
+      setLoading(true);
+      const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  
+      try {
+        await addDoc(collection(firestoreDb, `artifacts/${appId}/public/data/reports`), {
+          location: newReportLocation,
+          description: newReportDescription,
+          severity: newReportSeverity,
+          category: newReportCategory,
+          mediaUrl: newReportMediaUrl,
+          submittedAt: serverTimestamp(),
+          likes: [],
+          comments: [],
+          authorId: currentUserId,
+          authorEmail: currentUserEmail,
+        });
+        setShowReportModal(false);
+        setNewReportLocation('');
+        setNewReportDescription('');
+        setNewReportSeverity('medium');
+        setNewReportCategory('illegal_dumping');
+        setNewReportMediaUrl('');
+        setLoading(false);
+      } catch (error) {
+        console.error("Error submitting report:", error);
+        setError("Failed to submit report. Please try again.");
+        setLoading(false);
+      }
+    };
+  
+    const filteredReports = reports.filter(report => {
+      if (filterType === 'all') return true;
+      return report.category === filterType;
+    });
+  
+    if (loadingAuth || (loading && !error && firestoreDb)) { 
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+          <p className="ml-4 text-lg text-gray-700">Loading application...</p>
         </div>
-      </div>
-    );
-  }
+      );
+    }
+  
+    if (error && !loading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-red-50">
+          <div className="bg-white rounded-lg p-8 shadow-lg text-center">
+            <AlertTriangleIcon className="text-red-500 text-6xl mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-red-700 mb-2">Error Loading Data</h2>
+            <p className="text-gray-700">{error}</p>
+            <p className="text-sm text-gray-500 mt-4">Please check your Firebase Security Rules and network connection.</p>
+          </div>
+        </div>
+      );
+    }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
-      {/* Tailwind CSS CDN */}
-      <script src="https://cdn.tailwindcss.com"></script>
-      {/* Google Fonts - Inter */}
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <style>{`
-        body { font-family: 'Inter', sans-serif; }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) rotate(0deg); }
-          50% { transform: translateY(-20px) rotate(2deg); }
-        }
-        
-        @keyframes float-reverse {
-          0%, 100% { transform: translateY(0px) rotate(0deg); }
-          50% { transform: translateY(15px) rotate(-1deg); }
-        }
-        
-        @keyframes slide-down {
-          from { opacity: 0; transform: translateY(-30px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @keyframes fade-in-up {
-          from { opacity: 0; transform: translateY(30px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        .animate-float { animation: float 6s ease-in-out infinite; }
-        .animate-float-reverse { animation: float-reverse 8s ease-in-out infinite; }
-        .animate-slide-down { animation: slide-down 0.8s ease-out; }
-        .animate-fade-in { animation: fade-in 1s ease-out 0.2s both; }
-        .animate-fade-in-up { animation: fade-in-up 0.6s ease-out forwards; }
-        .animate-stagger > * {
-          opacity: 0;
-          animation: fade-in-up 0.6s ease-out forwards;
-        }
-
-        .animate-stagger > *:nth-child(1) { animation-delay: 0.1s; }
-        .animate-stagger > *:nth-child(2) { animation-delay: 0.2s; }
-        .animate-stagger > *:nth-child(3) { animation-delay: 0.3s; }
-        .animate-stagger > *:nth-child(4) { animation-delay: 0.4s; }
-        .animate-stagger > *:nth-child(5) { animation-delay: 0.5s; }
-        .animate-stagger > *:nth-child(6) { animation-delay: 0.6s; }
-        .animate-stagger > *:nth-child(7) { animation-delay: 0.7s; }
-        .animate-stagger > *:nth-child(8) { animation-delay: 0.8s; }
-      `}</style>
-
       {/* Header */}
       <div className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-4">
@@ -388,7 +338,7 @@ export default function ReportForum() {
                 onClick={() => navigate("/profile")}
                 className="p-2 hover:bg-slate-100 rounded-full transition-colors"
               >
-                <UserIcon className="text-slate-600" />
+                <UserIcon className="text-slate-600"/>
               </button>
               <div>
                 <h1 className="font-bold text-xl text-slate-800">Community Reports</h1>
@@ -397,7 +347,7 @@ export default function ReportForum() {
             </div>
             
             <button
-              onClick={() => setShowReportModal(true)}
+              onClick={handleReportClick} // Call the new function to navigate to Report
               className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white px-6 py-3 rounded-full font-semibold shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5"
             >
               <PlusIcon />
@@ -679,3 +629,4 @@ export default function ReportForum() {
     </div>
   );
 }
+

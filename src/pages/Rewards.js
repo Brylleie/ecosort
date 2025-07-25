@@ -3,9 +3,8 @@ import { collection, getDocs, doc, getDoc, runTransaction, addDoc } from 'fireba
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from "react-router-dom";
-// import { useNavigate } from 'react-router-dom';
-// Custom icon components to replace lucide-react
 
+// Custom icon components to replace lucide-react
 const ArrowLeft = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -57,12 +56,11 @@ export default function Rewards() {
   const [redeemedReward, setRedeemedReward] = useState(null);
   const { currentUser } = useAuth();
   const navigate = useNavigate();
-  // const navigate = useNavigate();
 
   const categories = [
     { id: 'all', name: 'All Rewards', icon: Gift },
     { id: 'food', name: 'Food & Groceries', icon: ShoppingBag },
-    { id: 'education', name: 'Education', icon: Star },
+    { id: 'education', name: 'School Supplies', icon: Star },
     { id: 'hygiene', name: 'Personal Care', icon: CheckCircle2 }
   ];
 
